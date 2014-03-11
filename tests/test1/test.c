@@ -35,9 +35,13 @@ static void * thread_start(void *arg)
 int main(int argc, char* argv[])
 {
 	
-    int num_threads = 1; 
+    int num_threads = 4; 
     struct thread_info *tinfo;
     pthread_attr_t attr;
+
+
+    if(initLogger())
+        return 1;     
 
     tinfo = (struct thread_info*)calloc(num_threads, sizeof(struct thread_info));
 
@@ -58,11 +62,6 @@ int main(int argc, char* argv[])
                                   &thread_start, &tinfo[tnum]);
            
     }
-
-    if(initLogger())
-        return 1; 
-
-    
     //DMLog(DM_LOG_WARNING,"Initial Test message version 0.000001 %d",5);
 
 

@@ -13,6 +13,9 @@
 
 //JUST FOR GIT
 
+#define NSEC_PER_SEC 1000000000
+#define TIMER_INTERVAL_NS 1000000000  
+
 const char * DM_ERROR_MSG =   "<DM_LOG_ERROR>   :";
 const char * DM_WARNING_MSG = "<DM_LOG_WARNING> :";
 const char * DM_TRACE_MSG =   "<DM_LOG_TRACE>   :";
@@ -21,77 +24,86 @@ const char * DM_INFO_MSG =    "<DM_LOG_INFO>    :";
 static std::queue<char*> logQueue;
 static pthread_mutex_t     mutex = PTHREAD_MUTEX_INITIALIZER;
 static FILE *fp;
-static pthread_t aggressive_t;
-static sigset_t waitset;
-static siginfo_t info;
+static pthread_t consumer_t;
 
-static void consumeFromQueue()
+static int createTimer(timer_t *timer, int signo)
+{
+    struct sigevent sev;
+
+    /* Create the timer */
+    sev.sigev_notify = SIGEV_SIGNAL;
+    sev.sigev_value.sival_ptr = timer;
+    sev.sigev_signo = signo;
+
+    if (timer_create(CLOCK_REALTIME, &sev, timer) == -1) 
+    {
+        printf("%s\n", strerror(errno));
+        return 1;
+    }
+
+    return 0;
+}
+static int startTimerRep(timer_t *timer, unsigned long long time)
+{
+    int ret;
+    struct itimerspec its;
+
+    if (!timer) 
+    {
+        return 1;
+    }
+
+    its.it_value.tv_sec = time / NSEC_PER_SEC;
+    its.it_value.tv_nsec = time % NSEC_PER_SEC;
+
+    its.it_interval.tv_sec = its.it_value.tv_sec;
+    its.it_interval.tv_nsec = its.it_value.tv_nsec;
+
+    ret = timer_settime(*timer, 0, &its, NULL);
+
+    return ret;
+}
+static void flushQueue()
 {
 	pthread_mutex_lock(&mutex);	
-    if(!logQueue.empty())
+    while(!logQueue.empty())
     {
         char *str = logQueue.front(); 
 	    logQueue.pop();
-        pthread_mutex_unlock(&mutex);
         if(LOG_TO_FILE == 1)
         {
             fprintf(fp,"%s\n",str);
-            fflush(fp);
         }
         if(LOG_TO_CONSOLE == 1)
             printf("%s\n",str);    
     }
-	else
-    {  
-        pthread_mutex_unlock(&mutex);
-    }
-
+    fflush(fp);	
+    pthread_mutex_unlock(&mutex);	    
 }
-
-static bool isQueueEmpty()
+static void * consumer(void *arg)
 {
-    bool bEmpty = false;
-    pthread_mutex_lock  (&mutex);
-    bEmpty = logQueue.empty() ? true : false;
-    pthread_mutex_unlock(&mutex);
-    return bEmpty;
-}
+    sigset_t waitset;
+    siginfo_t info;
 
-static void * aggressiveConsumer(void *arg)
-{
+    int result;
+    printf("Consumer Thread Started\n");
 
-    // Run infinitely
-    int result = 0;
+    sigaddset(&waitset, SIGUSR1);
+
     while(1)
     {
-        result = sigwaitinfo( &waitset, &info );     
-        if( result == 0 )
+        result = sigwaitinfo( &waitset, &info );
+        if( result == SIGUSR1 )
         {
-            fprintf(stderr,"sigwaitinfo() SUCCESS returned for signal %d\n",info.si_signo );
-            while(!isQueueEmpty())
-            {         
-                consumeFromQueue();
-            }
+            //fprintf(stderr,"sigwaitinfo() SUCCESS returned for signal %d\n",info.si_signo );
+            flushQueue();
         }
-        else 
+        else
         {
+            if(errno == EINTR) continue;
             fprintf( stderr,"sigwait() function failed error number %d\n", errno );
         }
-    }
-    return NULL;
-}
 
-
-static void * periodicConsumer(void *arg)
-{
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = TIMER_MS * N_SEC_TO_M_SEC;
-
-    while(1)
-    {        
-        consumeFromQueue();
-        nanosleep(&ts,NULL);
     }
     return NULL;
 }
@@ -140,41 +152,30 @@ static int createThread(pthread_t *thread,pthread_attr_t *attr, void *(*start_ro
     return INIT_LOGGER_OK; 
 }
 
-void catcher( int sig ) {
-    printf( "Signal catcher called for signal %d\n", sig );
-}
-
-static void setupSignal(struct sigaction sigact)
-{
-    sigemptyset( &sigact.sa_mask );
-    sigact.sa_flags = 0;
-    sigact.sa_handler = catcher;
-    sigaction( SIGUSR1, &sigact, NULL );
-
-    sigemptyset( &waitset );
-    sigaddset( &waitset, SIGUSR1);
-
-    pthread_sigmask( SIG_BLOCK, &waitset, NULL );
-}
-
 int initLogger()
 {    
-    struct sigaction sigact;
-    setupSignal(sigact);
-
+    
+    timer_t timerid;
     if(LOG_TO_FILE == 1)
     {
         if(openLogFile())
-            return INIT_LOGGER_FAILED; 
+            return INIT_LOGGER_FAILED;
     }
 
     pthread_attr_t attr;
-    pthread_t periodic_t;
+    sigset_t waitset;
+    sigemptyset(&waitset);
+    sigaddset( &waitset, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &waitset, NULL);
 
-    if(createThread(&periodic_t,&attr,&periodicConsumer))
+    if(createThread(&consumer_t,&attr,&consumer))
         return INIT_LOGGER_FAILED;
-   
-    if(createThread(&aggressive_t,&attr,&aggressiveConsumer))
+
+
+    if(createTimer(&timerid,SIGUSR1))
+        return INIT_LOGGER_FAILED;
+
+    if(startTimerRep(&timerid,TIMER_INTERVAL_NS))
         return INIT_LOGGER_FAILED;
 
     return INIT_LOGGER_OK;
@@ -221,7 +222,7 @@ void DMLog(DMLogLevel logLevel, char *format, ...)
 
     if(logLevel == DM_LOG_ERROR)
     {
-        if(pthread_kill(aggressive_t,SIGUSR1))
+        if(pthread_kill(consumer_t,SIGUSR1))
             fprintf(stderr,"PTHREAD_KILL FAILED\n");
     }
 }
