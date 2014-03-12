@@ -1,0 +1,62 @@
+Logging Utility 
+
+1) Structure
+		The directory structure is as follows:
+		/src
+		/inc
+		/tests
+
+        inc folder contains include files of the logging utility
+        config.h  - contains configurable parameters like LOG_TO_CONSOLE,
+                   LOG_TO_FILE etc.
+        logutility- contains functions and enums exposed to client applications
+                    which would use this logging utility 
+    -----------------------
+		src folder consists of the library code.
+        logutility.c - contains implementation code for functions defined in logutility.h
+                       Also contains implementation code for helper functions required 
+                       to carry out core functionality 
+        Makefile     - use with make command to compile library 
+
+    -----------------------
+        tests folder consists of the client applications which use the logging utility
+
+    -----------------------
+        results folder consists of log files to prove correctness of logging utility
+
+    -----------------------
+
+2) Compiling and Executing: 
+        To build logutility library: 
+           1) go to /src
+           2) make
+        This will create logutility.a in same folder 
+    -----------------------
+        To run the test cases, go to the tests folder and inside a specific test folder
+		
+		For instance, inside test1:
+		g++ test.c -o test -I../../inc ../../src/logutility.a -pthread -lrt			
+		and then run ./test <num_threads>
+
+3) Design of Logging Utility: 
+      The logging utility will use a Message Queue for holding log messages. Messages will be added to queue from the DMLog() call which is provided by this logging utility library to clients.
+      Messages will be removed from queue and written to file and/or console by a Consumer thread. This consumer thread is spawned when initLogger() function is called by the client. 
+      initLogger() will also start a timer which will generate a singal for the Consumer thread to start consuming from the message queue. 
+      Consumer thread is signalled by 2 ways : 
+            1) By the timer 
+            2) Signalled manually, when a DM_LOG_ERROR message is added to queue
+      This is done to expedite the processing of the DM_LOG_ERROR message, since all ERROR messages must be processed as soon as possible. 
+      When the consumer thread is signalled, it will consume all messages from the queue. This approach has been used to keep the average queue length as short as possible so that when a DM_LOG_ERROR
+      message is received, it does not take too long to get serviced. 
+      Also, it uses bufferring to buffer messages from queue and flush them to disk (log file) after queue is empty, there by making it efficient
+      This utility uses only 1 consumer thread for servicing log messages because using multiple such consumer threads will create more contention for the queue lock which is not desirable. 
+      Rate at which timer signals consumer thread is configurable and can be optimized according to application needs. 
+
+4) Tests conducted to ensure correctness: 
+
+      Test 1) From a single thread, generate multiple log messages sequentially from loglevel 0 - 3. All Messages should appear inorder on console and log file 
+           <Please find log file in test results folder  test1.txt >
+                                              
+      Test 2) From multiple threads, generate multiple log messages randomly. All messages Per Thread, should appear in increasing order of count, which is kept to keep track of order.
+           <Please find log file in test results folder  test2.txt >      
+

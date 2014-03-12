@@ -313,6 +313,7 @@ int initLogger()
      * to print messages from log queue
      */
 
+
     if(createThread(&consumer_t,&attr,&consumer))
         return INIT_LOGGER_FAILED;
 
@@ -349,53 +350,45 @@ int initLogger()
 void DMLog(DMLogLevel logLevel, char *format, ...)
 {
     va_list arglist;
-    std::string tempstr;
-    std::string logMsg;
+ 
+   /* 
+    * Use vsprintf to compose formatted string
+    * 
+    */
+    char buffer[256];
+    va_start(arglist,format);
+    vsprintf(buffer, format,arglist);
+    va_end(arglist);
+    char *str = (char*) malloc(256);
 
     switch(logLevel)    
     {
-
 	    case DM_LOG_ERROR:
-                tempstr.append(DM_ERROR_MSG);
+	        	strcat(str,DM_ERROR_MSG);
                 break;
 
         case DM_LOG_WARNING:
-                tempstr.append(DM_WARNING_MSG);
+        		strcat(str,DM_WARNING_MSG);
                 break; 
 
         case DM_LOG_TRACE:
-                tempstr.append(DM_TRACE_MSG);
+        		strcat(str,DM_TRACE_MSG);
                 break;		
 
         case DM_LOG_INFO:
-                tempstr.append(DM_INFO_MSG);
+        		strcat(str,DM_INFO_MSG);
                 break;
 
 	    default:
 		        break;
     }    
-
-    tempstr.append(format);
-    /* 
-     * Use vsprintf to compose formatted string
-     * Store formatted string in tempstr
-     */
-    va_start( arglist, (char*) tempstr.c_str());
-    vsprintf( (char*) logMsg.c_str(),(char*) tempstr.c_str(), arglist);
-    va_end( arglist );
-
-    /* 
-     * Append tempstr to logMsg making it complete, ready 
-     * to be pushed to queue
-     */
-  	
-
+  
+	strcat(str,buffer);
     /* Push formatted message to log Queue */
     pthread_mutex_lock(&queueMutex);
-    logQueue.push((char*) logMsg.c_str());   
+    logQueue.push(str);   
     pthread_mutex_unlock(&queueMutex);
 
-    //printf("LOG MESSAGE CREATED IS: %s\n",(char*)logMsg.c_str());
 
     /*
      * If DM_LOG_ERROR message, signal consume thread 
