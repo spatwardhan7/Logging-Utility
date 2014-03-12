@@ -6,27 +6,70 @@
 struct thread_info {    /* Used as argument to thread_start() */
            pthread_t thread_id;        /* ID returned by pthread_create() */
            int       thread_num;       /* Application-defined thread # */
+           int       num_threads;       /* Number of Threads */
 };
 
 
 static void * thread_start(void *arg)
 {
     struct thread_info *tinfo =(struct thread_info*) arg;
-    char detail[]= "Detail string ";
+    char detail[]= "Bad State";
     int count = 0;
     int LOG_TYPE = 0;
+    time_t t;
 
+    /* Intializes random number generator */
+    srand((unsigned) time(&t));
+
+    /* 
+     * Generate all types of messages with different varargs
+     */
     while(1)
     {
-         sleep(1);
+        /* 
+         * In case of only 1 thread, generate messages sequentially
+         * starting from DMLogLevel 0 to 3 to ensure correctness
+         */
+        if(tinfo->num_threads == 1)    
+        {    
+            //printf("One thread case\n");            
+            LOG_TYPE = count % 4;
+        }
+        else
+        {
+            //printf("More than 1 thread case\n");            
+            LOG_TYPE = (rand()+tinfo->thread_num) % 4;
+        }
+        fprintf(stderr,"LOG TYPE = %d in Thread: %d \n", LOG_TYPE, tinfo->thread_num);
+        
+        switch(LOG_TYPE)
+        {
+            case 0:
+                DMLog((DMLogLevel)LOG_TYPE,"Thread %d: Error message in test %d and %s occurred", tinfo->thread_num,count+1,detail);
+                //printf(" 0 \n");
+                break;
             
-         LOG_TYPE = count %4;
-         if(LOG_TYPE == 0 && count <15)
-            LOG_TYPE = 1; 
+            case 1:
+                DMLog((DMLogLevel)LOG_TYPE,"Thread %d: Warning message in test %d ", tinfo->thread_num,count+1);
+                //printf(" 1 \n");
+                break;
 
-	     DMLog((DMLogLevel)LOG_TYPE,"Thread %d : LOG TYPE %d in test %d and str %s", tinfo->thread_num,(DMLogLevel)LOG_TYPE,count,detail);
-         count++;
+            case 2:
+                DMLog((DMLogLevel)LOG_TYPE,"Thread %d: Trace message in test %d ", tinfo->thread_num,count+1);
+                //printf(" 2 \n");
+                break;
 
+            case 3:
+                DMLog((DMLogLevel)LOG_TYPE,"Thread %d: Info message", tinfo->thread_num);
+                //printf(" 3 \n");
+                break;
+
+            default:
+                break;
+        }
+        
+        count++;
+        sleep(2);
     }
     return NULL;
 }
@@ -34,14 +77,20 @@ static void * thread_start(void *arg)
 
 int main(int argc, char* argv[])
 {
-	
-    int num_threads = 4; 
+    if(argc != 2)
+    {
+        printf("Usage: ./test <num_threads>\n");
+        return 1;
+    }
+
+    int num_threads = atoi(argv[1]);
+
+    /* Initialize Logger */
+    if(initLogger() == INIT_LOGGER_FAILED)
+        return 1;     
+
     struct thread_info *tinfo;
     pthread_attr_t attr;
-
-
-    if(initLogger())
-        return 1;     
 
     tinfo = (struct thread_info*)calloc(num_threads, sizeof(struct thread_info));
 
@@ -53,17 +102,11 @@ int main(int argc, char* argv[])
     for (tnum = 0; tnum < num_threads; tnum++) 
     {
          tinfo[tnum].thread_num = tnum + 1;
+         tinfo[tnum].num_threads = num_threads;
         
-
-         /* The pthread_create() call stores the thread ID into
-            corresponding element of tinfo[] */
-
           s = pthread_create(&tinfo[tnum].thread_id, &attr,
-                                  &thread_start, &tinfo[tnum]);
-           
+                                  &thread_start, &tinfo[tnum]);       
     }
-    //DMLog(DM_LOG_WARNING,"Initial Test message version 0.000001 %d",5);
-
 
     while(1)
     {}

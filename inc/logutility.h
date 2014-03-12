@@ -7,8 +7,6 @@
 #define INIT_LOGGER_OK       0
 #define INIT_LOGGER_FAILED   1
 
-#define N_SEC_TO_M_SEC       1000000
-
 typedef enum
 {
     DM_LOG_ERROR,
@@ -17,7 +15,7 @@ typedef enum
     DM_LOG_INFO
 }DMLogLevel;
 
-
+/* Functions from logutility exposed to client applications */
 int initLogger();
 void DMLog(DMLogLevel logLevel, char *format, ...);
 
